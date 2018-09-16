@@ -1,7 +1,8 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import select
 import socket
+import re
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -31,19 +32,23 @@ while True:
                     print(path)
                     if path == b'/':
                         response_content = open('index.html', 'rb').read()
-                        status = "200 OK"
+                        status = b"200 OK"
                     else:
                         response_content = open('generic_error.html','rb').read()
-                        status = "404 Not Found"
+                        status = b"404 Not Found"
                 elif method == b'POST':
-                    print(method, path,"\n", lixo)
+                    print(lixo)
+                    filename = re.search(b'filename=.*"', request)
+                    contenttype = re.search(b'Content-Type=.*\r', request)
+                    print(filename)
+                    print(contenttype)
                     response_content = b"Arquivo recebido com sucesso xD"
-                    status = "200 OK"
+                    status = b"200 OK"
                 else:
                     response_content = open('generic_error.html', 'rb').read()
-                    status = "400 Bad Request"
+                    status = b"400 Bad Request"
 
-                response = b'HTTP/1.0 {}\r\nContent-Length: {}\r\n\r\n'.format(status, len(response_content))
+                response = b'HTTP/1.0 %s\r\nContent-Length: %d\r\n\r\n' % (status, len(response_content))
                 response += response_content
                 client.send(response)
                 client.close()
