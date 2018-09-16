@@ -29,6 +29,9 @@ while True:
                         response_content = open('index.html','rb').read()
                     else:
                         response_content = open('generic_error.html','rb').read()
+                elif method == b'POST':
+                    print(method, path,"\n", lixo)
+                    response_content = b"Arquivo recebido com sucesso xD"
                 else:
                     response_content = open('generic_error.html','rb').read()
                 
