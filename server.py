@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# -*- encoding: utf-8 -*-
 
 import select
 import socket
@@ -19,7 +20,7 @@ while True:
         if client == s:
             client, addr = s.accept()
 
-            client.setblocking(0)
+            client.setblocking(False)
             c_inputs.append(client)
             requests[client] = b''
         else:
@@ -32,10 +33,10 @@ while True:
                     print(path)
                     if path == b'/':
                         response_content = open('index.html', 'rb').read()
-                        status = b"200 OK"
+                        status = b'200 OK'
                     else:
                         response_content = open('generic_error.html','rb').read()
-                        status = b"404 Not Found"
+                        status = b'404 Not Found'
                 elif method == b'POST':
                     print(lixo)
                     filename = re.search(b'filename=.*"', request)
@@ -46,7 +47,7 @@ while True:
                     status = b"200 OK"
                 else:
                     response_content = open('generic_error.html', 'rb').read()
-                    status = b"400 Bad Request"
+                    status = b'400 Bad Request'
 
                 response = b'HTTP/1.0 %s\r\nContent-Length: %d\r\n\r\n' % (status, len(response_content))
                 response += response_content
