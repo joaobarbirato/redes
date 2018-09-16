@@ -44,7 +44,7 @@ while True:
                     response_content = open('generic_error.html', 'rb').read()
                     status = b'400 Bad Request'
 
-                response = b'HTTP/1.0 %s\r\nContent-Length: %d\r\n\r\n' % status, len(response_content)
+                response = b'HTTP/1.0 %s\r\nContent-Length: %d\r\n\r\n' % (status, len(response_content))
                 response += response_content
                 client.send(response)
                 client.close()
