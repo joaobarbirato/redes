@@ -32,17 +32,17 @@ while True:
                     print(path)
                     if path == b'/':
                         response_content = open('index.html', 'rb').read()
-                        status = '200 OK'
+                        status = b'200 OK'
                     else:
                         response_content = open('generic_error.html','rb').read()
-                        status = '404 Not Found'
+                        status = b'404 Not Found'
                 elif method == b'POST':
                     print(method, path,"\n", lixo)
                     response_content = b'Arquivo recebido com sucesso xD'
-                    status = '200 OK'
+                    status = b'200 OK'
                 else:
                     response_content = open('generic_error.html', 'rb').read()
-                    status = '400 Bad Request'
+                    status = b'400 Bad Request'
 
                 response = b'HTTP/1.0 %s\r\nContent-Length: %d\r\n\r\n' % status, len(response_content)
                 response += response_content
