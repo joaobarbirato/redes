@@ -1,4 +1,5 @@
-#!/usr/bin/python
+#!/usr/bin/python3
+# -*- encoding: utf-8 -*-
 
 import select
 import socket
@@ -18,7 +19,7 @@ while True:
         if client == s:
             client, addr = s.accept()
 
-            client.setblocking(0)
+            client.setblocking(False)
             c_inputs.append(client)
             requests[client] = b''
         else:
