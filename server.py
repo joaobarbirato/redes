@@ -62,7 +62,7 @@ while True:
                                   b'Content-Type: (.+)\r\n\r\n' \
                                   b'(.+\n)\r\n'
                         content = re.search(pattern, body)
-            
+                        
                         if content is not None:
                             print("Filename: {}\nContent-Type: {}\nContent: {}".format(content.group(1), content.group(2), content.group(3)))
                             filename = str(content.group(1)).strip('b\"\'').replace('..', '')
