@@ -14,26 +14,20 @@ from constants import *
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind(('', SOCK_PORT))
-s.listen(5)
+s.listen(1)
+s.setblocking(False)
 
 c_inputs = []   # lista de clientes
 requests = {}   # requisições
 
-def _get_list_methods():
-    """
-        _get_list_methods
-        retorna lista de métodos do protocolo HTTP
-    """
-    return [
+# Lista de métodos do protocolo HTTP
+list_methods = [
         b'GET',
         b'POST',
         b'HEAD',
         b'DELETE',
         b'PUT'
     ]
-
-
-list_methods = _get_list_methods()
 
 def main():
     """
@@ -46,7 +40,7 @@ def main():
             
             if client == s:
                 client, addr = s.accept()
-                client.setblocking(False)
+                client.setblocking(0)
                 c_inputs.append(client)
                 requests[client] = b''
             else:
@@ -84,16 +78,14 @@ def main():
                                 response_content = open('templates/generic_error.html','rb').read()
                                 status = NOT_FOUND
                         elif method == b'POST':
-                            pattern = b'filename=\"(.+)\"\r\n' \
-                                    b'Content-Type: (.+)\r\n\r\n' \
-                                    b'(.+\n)\r\n'
-                            content = re.search(pattern, body)
-                            
-                            if content is not None:
-                                print("Filename: {}\nContent-Type: {}\nContent: {}".format(content.group(1), content.group(2), content.group(3)))
-                                filename = str(content.group(1)).strip('b\"\'').replace('..', '')
+                            #content = re.search(RE_EXPECT, str(body))
+                            filename = re.search(RE_FILE, body)
+
+                            if filename is not None:
+                                print("> Received new file: Filename: {}, Content-Type: {}, Content: {}".format(content.group('filename'), content.group('type'), content.group('content')))
+                                filename = str(content.group('filename')).strip('b\"\'').replace('..', '')
                                 new_file = open(f'./files/{filename}', 'wb')
-                                new_file.write(content.group(3))
+                                new_file.write(content.group('content'))
                                 new_file.close()
                                 response_content = b'Arquivo recebido com sucesso xD'
                                 status = OK
@@ -103,7 +95,6 @@ def main():
                         else:
                             response_content = open('templates/generic_error.html', 'rb').read()
                             status = NOT_IMPL
-
                     else:
                         response_content = open('templates/generic_error.html', 'rb').read()
                         status = BAD_REQ
