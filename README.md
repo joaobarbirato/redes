@@ -17,5 +17,11 @@ git clone https://github.com/joaobarbirato/redes
 
 Para adicionar arquivos:
 ```shell
-curl -F 'nomedoarquivo=@caminhodoarquivo' http://localhost:1026
+curl -X POST -F 'nomedoarquivo=@caminhodoarquivo' http://localhost:1026
 ```
+
+Para ver o conteúdo de arquivos enviados:
+```shell
+curl http://localhost:1026/<arquivo>
+```
+ou acesse http://localhost:1026/<arquivo> no browser.
