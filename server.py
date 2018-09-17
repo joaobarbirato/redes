@@ -4,6 +4,7 @@
 import select
 import socket
 import re
+import os
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -35,13 +36,18 @@ while True:
                         pattern = b'/(.+)?'
                         content = re.search(pattern, path)
                         if content.group(0) == b'/':
-                            file_content = open('index.html', 'rb').read()
+                            file_dir = "files/"
+                            file_list = os.listdir(file_dir)
+                            file_content = open('indexinit.html', 'rb').read()
+                            for file in file_list:
+                                file_content += b'<a href=%s> %s <a><br>' % (str.encode(file), str.encode(file))
+                            file_content += open('indexend.html', 'rb').read() 
                             response_content = b'<html lang="en"><head><meta charset="utf8"></head><body>' + file_content + b'</body></html>'
                             status = b'200 OK'
                         elif content.group(1) is not None:
                             filename = str(content.group(1)).strip('b\"\'')
                             try:
-                                response_content = open(f'{filename}', 'rb').read()
+                                response_content = open(f'./files/{filename}', 'rb').read()
                                 status = b'200 OK'
                             except IOError:
                                 response_content = open('generic_error.html', 'rb').read()
@@ -58,7 +64,7 @@ while True:
                         if content is not None:
                             print("Filename: {}\nContent-Type: {}\nContent: {}".format(content.group(1), content.group(2), content.group(3)))
                             filename = str(content.group(1)).strip('b\"\'').replace('..', '')
-                            new_file = open(f'./{filename}', 'wb')
+                            new_file = open(f'./files/{filename}', 'wb')
                             new_file.write(content.group(3))
                             new_file.close()
                             response_content = b'Arquivo recebido com sucesso xD'
