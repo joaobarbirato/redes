@@ -47,7 +47,9 @@ while True:
                         elif content.group(1) is not None:
                             filename = str(content.group(1)).strip('b\"\'')
                             try:
-                                response_content = open(f'./files/{filename}', 'rb').read()
+                                response_content = open(f'fileinit.html', 'rb').read()
+                                response_content += open(f'./files/{filename}', 'rb').read()
+                                response_content += open(f'fileend.html', 'rb').read()
                                 status = b'200 OK'
                             except IOError:
                                 response_content = open('generic_error.html', 'rb').read()
