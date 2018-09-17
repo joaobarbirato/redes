@@ -92,17 +92,22 @@ def main():
                             else:
                                 response_content = open('templates/try_again.html', 'rb').read()
                                 status = FORB
+                        elif method == b'HEAD':
+                            response_content = b''
+                            status = OK
                         else:
                             response_content = open('templates/generic_error.html', 'rb').read()
                             status = NOT_IMPL
                     else:
                         response_content = open('templates/generic_error.html', 'rb').read()
                         status = BAD_REQ
-
+                    
                     response = b'HTTP/1.0 %s\r\nContent-Length: %d\r\n\r\n' % (status, len(response_content))
                     response += response_content
                     client.send(response)
                     client.close()
+                    print("> Req: ", request)
+                    print("> Res: ", response)
                     del requests[client]
                     c_inputs.remove(client)
 
