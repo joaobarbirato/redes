@@ -57,7 +57,7 @@ while True:
             
                         if content is not None:
                             print("Filename: {}\nContent-Type: {}\nContent: {}".format(content.group(1), content.group(2), content.group(3)))
-                            filename = str(content.group(1)).strip('b\"\'')
+                            filename = str(content.group(1)).strip('b\"\'').replace('..', '')
                             new_file = open(f'./{filename}', 'wb')
                             new_file.write(content.group(3))
                             new_file.close()
