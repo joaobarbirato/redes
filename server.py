@@ -61,11 +61,11 @@ while True:
                             new_file = open(f'./{filename}', 'wb')
                             new_file.write(content.group(3))
                             new_file.close()
-                            response_content = b"Arquivo recebido com sucesso xD"
-                            status = b"200 OK"
+                            response_content = b'Arquivo recebido com sucesso xD'
+                            status = b'200 OK'
                         else:
                             response_content = open('try_again.html', 'rb').read()
-                            status = b"403 Forbidden"
+                            status = b'403 Forbidden'
                     else:
                         response_content = open('generic_error.html', 'rb').read()
                         status = b'501 Not Implemented'
