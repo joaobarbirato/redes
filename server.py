@@ -52,7 +52,7 @@ def main():
                     method, path, body = request.split(b' ', 2)
                     
                     if method in methods:
-                        if method == b'GET':
+                        if method == b'GET' or method == b'HEAD':
                             pattern = b'/(.+)?'
                             content = re.search(pattern, path)
                             if content.group(0) == b'/':
@@ -92,9 +92,6 @@ def main():
                             else:
                                 response_content = open('templates/try_again.html', 'rb').read()
                                 status = FORB
-                        elif method == b'HEAD':
-                            response_content = b''
-                            status = OK
                         else:
                             response_content = open('templates/generic_error.html', 'rb').read()
                             status = NOT_IMPL
@@ -103,7 +100,8 @@ def main():
                         status = BAD_REQ
                     
                     response = b'HTTP/1.0 %s\r\nContent-Length: %d\r\n\r\n' % (status, len(response_content))
-                    response += response_content
+                    if method is not b'HEAD':
+                        response += response_content
                     client.send(response)
                     client.close()
                     print("> Req: ", request)
