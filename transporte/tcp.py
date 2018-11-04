@@ -111,24 +111,22 @@ def timeout(fd, conexao):
 
 	(dst_addr, dst_port, src_addr, src_port) = conexao.id_conexao
 
-    segment = struct.pack('!HHIIHHHH', src_port, dst_port, conexao.seq_no,
-                          conexao.ack_no, (5<<12)|FLAGS_ACK,
-                          1024, 0, 0) + payload
+        segment = struct.pack('!HHIIHHHH', src_port, dst_port, conexao.seq_no, conexao.ack_no, (5<<12)|FLAGS_ACK, 1024, 0, 0) + payload
 
-    conexao.seq_no = (conexao.seq_no + len(payload)) & 0xffffffff
+        conexao.seq_no = (conexao.seq_no + len(payload)) & 0xffffffff
 
-    segment = fix_checksum(segment, src_addr, dst_addr)
-
-    if not TESTAR_PERDA_ENVIO or random.random() < 0.95:
-        fd.sendto(segment, (dst_addr, dst_port))     
-        #conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, timeout, fd, conexao)
-
-    if conexao.send_queue == b"":
-        segment = struct.pack('!HHIIHHHH', src_port, dst_port, conexao.seq_no,
-                          conexao.ack_no, (5<<12)|FLAGS_FIN|FLAGS_ACK,
-                          0, 0, 0)
         segment = fix_checksum(segment, src_addr, dst_addr)
-        fd.sendto(segment, (dst_addr, dst_port))
+
+        if not TESTAR_PERDA_ENVIO or random.random() < 0.95:
+            fd.sendto(segment, (dst_addr, dst_port))     
+            #conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, timeout, fd, conexao)
+
+        if conexao.send_queue == b"":
+            segment = struct.pack('!HHIIHHHH', src_port, dst_port, conexao.seq_no,
+                            conexao.ack_no, (5<<12)|FLAGS_FIN|FLAGS_ACK,
+                              0, 0, 0)
+            segment = fix_checksum(segment, src_addr, dst_addr)
+            fd.sendto(segment, (dst_addr, dst_port))
 
 
 def raw_recv(fd):
