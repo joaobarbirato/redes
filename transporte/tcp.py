@@ -81,7 +81,7 @@ def fix_checksum(segment, src_addr, dst_addr):
 
 def send_next(fd, conexao):
     payload = conexao.send_queue[:MSS]
-    conexao.nao_confirmado.append(conexao.send_queue[:MSS])
+    #conexao.nao_confirmado.append(conexao.send_queue[:MSS])
     conexao.send_queue = conexao.send_queue[MSS:]
 
     (dst_addr, dst_port, src_addr, src_port) = conexao.id_conexao
@@ -89,6 +89,9 @@ def send_next(fd, conexao):
     segment = struct.pack('!HHIIHHHH', src_port, dst_port, conexao.seq_no,
                           conexao.ack_no, (5<<12)|FLAGS_ACK,
                           1024, 0, 0) + payload
+
+    #Colocando o pacote que sera enviado na fila de nao confirmados, para confirmar seu ack futuramente
+    conexao.nao_confirmado.append(segment)
 
     conexao.seq_no = (conexao.seq_no + len(payload)) & 0xffffffff
 
