@@ -11,6 +11,7 @@ import socket
 import struct
 import os
 import random
+from datetime import datetime
 
 FLAGS_FIN = 1<<0
 FLAGS_SYN = 1<<1
@@ -23,23 +24,25 @@ TESTAR_PERDA_ENVIO = False
 
 
 class Conexao:
-    def __init__(self, id_conexao, seq_no, ack_no, rtt=3):
+    def __init__(self, id_conexao, seq_no, ack_no):
         self.id_conexao = id_conexao
         self.seq_no = seq_no
         self.ack_no = ack_no
-        self.send_queue = b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n" + 1000000 * b"hello pombo\n"
-        self.rtt = rtt
-        self.nao_confirmado = []
+        self.rtt = 3
+    #    self.new_time = None
         self.timer = None
+        self.send_queue = b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n" + 1000000 * b"hello pombo\n"
+        self.not_acked_queue = []
 conexoes = {}
-
 
 
 def addr2str(addr):
     return '%d.%d.%d.%d' % tuple(int(x) for x in addr)
 
+
 def str2addr(addr):
     return bytes(int(x) for x in addr.split('.'))
+
 
 def handle_ipv4_header(packet):
     version = packet[0] >> 4
@@ -70,6 +73,7 @@ def calc_checksum(segment):
     checksum = ~checksum
     return checksum & 0xffff
 
+
 def fix_checksum(segment, src_addr, dst_addr):
     pseudohdr = str2addr(src_addr) + str2addr(dst_addr) + \
         struct.pack('!HH', 0x0006, len(segment))
@@ -79,9 +83,33 @@ def fix_checksum(segment, src_addr, dst_addr):
     return bytes(seg)
 
 
+def ack_recv(fd, conexao, ack_no):
+    # ack_no da Conexão é o SendBase
+    if ack_no > conexao.ack_no:
+        conexao.ack_no = ack_no
+    
+    # Existem pacotes não-confirmados
+    if len(conexao.not_acked_queue) >= 1:
+        conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, timeout, 
+                                                            fd, conexao)
+    elif conexao.timer is not None:
+        conexao.timer.cancel()
+                                
+
+def timeout(fd, conexao):
+    (dst_addr, dst_port, _, _) = conexao.id_conexao
+    
+    # Envia o segmento com o menor seq_no
+    segment = conexao.not_acked_queue[0]
+    fd.sendto(segment, (dst_addr, dst_port))
+    
+    # Inicia o timer
+    conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, 
+                                                timeout, fd, conexao)
+
+
 def send_next(fd, conexao):
     payload = conexao.send_queue[:MSS]
-    conexao.nao_confirmado.append(conexao.send_queue[:MSS])
     conexao.send_queue = conexao.send_queue[MSS:]
 
     (dst_addr, dst_port, src_addr, src_port) = conexao.id_conexao
@@ -90,13 +118,20 @@ def send_next(fd, conexao):
                           conexao.ack_no, (5<<12)|FLAGS_ACK,
                           1024, 0, 0) + payload
 
+    # Atualiza o NextSeqNum
     conexao.seq_no = (conexao.seq_no + len(payload)) & 0xffffffff
-
+    
     segment = fix_checksum(segment, src_addr, dst_addr)
 
-    if not TESTAR_PERDA_ENVIO or random.random() < 0.95:
-        fd.sendto(segment, (dst_addr, dst_port))
-        conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, timeout, fd, conexao)
+    # Coloca o segmento na fila de não-confirmados
+    conexao.not_acked_queue.append(segment)
+
+    fd.sendto(segment, (dst_addr, dst_port))
+    
+    # Começa o timer para retransmissão
+    if conexao.timer is not None:
+        conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, timeout, 
+                                                            fd, conexao)
 
     if conexao.send_queue == b"":
         segment = struct.pack('!HHIIHHHH', src_port, dst_port, conexao.seq_no,
@@ -104,31 +139,9 @@ def send_next(fd, conexao):
                           0, 0, 0)
         segment = fix_checksum(segment, src_addr, dst_addr)
         fd.sendto(segment, (dst_addr, dst_port))
-
-
-def timeout(fd, conexao):
-	payload = conexao.naoconfirmado[:MSS]
-
-	(dst_addr, dst_port, src_addr, src_port) = conexao.id_conexao
-
-    segment = struct.pack('!HHIIHHHH', src_port, dst_port, conexao.seq_no,
-                          conexao.ack_no, (5<<12)|FLAGS_ACK,
-                          1024, 0, 0) + payload
-
-    conexao.seq_no = (conexao.seq_no + len(payload)) & 0xffffffff
-
-    segment = fix_checksum(segment, src_addr, dst_addr)
-
-    if not TESTAR_PERDA_ENVIO or random.random() < 0.95:
-        fd.sendto(segment, (dst_addr, dst_port))     
-        #conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, timeout, fd, conexao)
-
-    if conexao.send_queue == b"":
-        segment = struct.pack('!HHIIHHHH', src_port, dst_port, conexao.seq_no,
-                          conexao.ack_no, (5<<12)|FLAGS_FIN|FLAGS_ACK,
-                          0, 0, 0)
-        segment = fix_checksum(segment, src_addr, dst_addr)
-        fd.sendto(segment, (dst_addr, dst_port))
+        print("Pacote final enviado")
+    else:
+        asyncio.get_event_loop().call_later(.001, send_next, fd, conexao)
 
 
 def raw_recv(fd):
@@ -158,24 +171,17 @@ def raw_recv(fd):
                   (src_addr, src_port))
 
         conexao.seq_no += 1
+
         asyncio.get_event_loop().call_later(.1, send_next, fd, conexao)
-    
     elif id_conexao in conexoes:
-    	conexao = conexoes[id_conexao]
-    	if (flags & FLAGS_ACK) == FLAGS_ACK:
-    		received_ack(fd, conexao)
-    	#if(payload not zero)
-
-        conexao.ack_no += len(payload)
-
+        conexao = conexoes[id_conexao]
+        if (flags & FLAGS_ACK) == FLAGS_ACK:
+            ack_recv(fd, conexao, ack_no)
+#        conexao.ack_no += len(payload)
     else:
         print('%s:%d -> %s:%d (pacote associado a conexão desconhecida)' %
             (src_addr, src_port, dst_addr, dst_port))
 
-def received_ack(fd, conexao):
-	if conexao.timer is not None:
-		conexao.timer.cancel()
-	
 
 
 if __name__ == '__main__':
@@ -183,3 +189,4 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     loop.add_reader(fd, raw_recv, fd)
     loop.run_forever()
+
