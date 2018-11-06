@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "net.py", line 72, in <module>
+    loop.run_forever()
+  File "/usr/lib64/python3.7/asyncio/base_events.py", line 528, in run_forever
+    self._run_once()
+  File "/usr/lib64/python3.7/asyncio/base_events.py", line 1728, in _run_once
+    event_list = self._selector.select(timeout)
+  File "/usr/lib64/python3.7/selectors.py", line 468, in select
+    fd_event_list = self._selector.poll(timeout, max_ev)
+KeyboardInterrupt
