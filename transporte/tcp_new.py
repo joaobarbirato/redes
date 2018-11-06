@@ -10,7 +10,7 @@ import asyncio
 import socket
 import struct
 import os
-import random
+from collections import deque
 from datetime import datetime
 
 FLAGS_FIN = 1 << 0
@@ -27,13 +27,13 @@ class Conexao:
         self.seq_no = seq_no
         self.ack_no = ack_no
         self.rtt = 3
-    #    self.new_time = None
+        self.new_time = None
         self.timer = None
         self.send_queue = b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n" + 1000000 * b"hello pombo\n"
-        self.not_acked_queue = []
+        self.not_acked_queue = deque()
+        self.acks = {}
 conexoes = {}
 
-ccceonwn
 def addr2str(addr):
     return '%d.%d.%d.%d' % tuple(int(x) for x in addr)
 
@@ -82,24 +82,39 @@ def fix_checksum(segment, src_addr, dst_addr):
 
 def ack_recv(fd, conexao, ack_no):
     # ack_no da Conexão é o SendBase
+    # Atualiza o SendBase, descarta segmentos com seq_no < SendBase
     if ack_no > conexao.ack_no:
         conexao.ack_no = ack_no
-    
+        sorted(conexao.not_acked_queue, key=lambda x: x[1])
+        while conexao.not_acked_queue[0][1] < ack_no:
+            conexao.not_acked_queue.popleft()
     # Existem pacotes não-confirmados
     if len(conexao.not_acked_queue) >= 1:
         conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, timeout, 
                                                             fd, conexao)
     elif conexao.timer is not None:
         conexao.timer.cancel()
-                                
+        new_rtt = datetime.now() - conexao.new_time
+        conexao.rtt = new_rtt.total_seconds()
+        conexao.new_time = None
+    # ACK duplicado recebido para o segmento ack_no
+    else:
+        if ack_no in conexao.acks:
+            conexao.acks[ack_no] += 1
+        else:
+            conexao.acks[ack_no] = 1
+        # Faz o envio imediato do segmento ack_no
+        if conexao.acks[ack_no] == 3:
+            (dst_addr, dst_port, _, _) = conexao.id_conexao
+            segment = [segm for segm in conexao.not_acked_queue if segm[1] == ack_no][0][0]
+            fd.sendto(segment, (dst_addr, dst_port))
+
 
 def timeout(fd, conexao):
     (dst_addr, dst_port, _, _) = conexao.id_conexao
-    
     # Envia o segmento com o menor seq_no
-    segment = conexao.not_acked_queue[0]
+    segment = conexao.not_acked_queue[0][0]
     fd.sendto(segment, (dst_addr, dst_port))
-    
     # Inicia o timer
     conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, 
                                                 timeout, fd, conexao)
@@ -116,20 +131,19 @@ def send_next(fd, conexao):
                           1024, 0, 0) + payload
 
     # Atualiza o NextSeqNum
+    seq_no = conexao.seq_no
     conexao.seq_no = (conexao.seq_no + len(payload)) & 0xffffffff
-    
     segment = fix_checksum(segment, src_addr, dst_addr)
-
+    
     # Coloca o segmento na fila de não-confirmados
-    conexao.not_acked_queue.append(segment)
-
+    conexao.not_acked_queue.append([segment, seq_no])
     fd.sendto(segment, (dst_addr, dst_port))
     
     # Começa o timer para retransmissão
     if conexao.timer is not None:
         conexao.timer = asyncio.get_event_loop().call_later(conexao.rtt, timeout, 
                                                             fd, conexao)
-
+        conexao.new_time = datetime.now()
     if conexao.send_queue == b"":
         segment = struct.pack('!HHIIHHHH', src_port, dst_port, conexao.seq_no,
                           conexao.ack_no, (5<<12)|FLAGS_FIN|FLAGS_ACK,
@@ -174,15 +188,14 @@ def raw_recv(fd):
         conexao = conexoes[id_conexao]
         if (flags & FLAGS_ACK) == FLAGS_ACK:
             ack_recv(fd, conexao, ack_no)
-#        conexao.ack_no += len(payload)
     else:
         print('%s:%d -> %s:%d (pacote associado a conexão desconhecida)' %
               (src_addr, src_port, dst_addr, dst_port))
 
 
 if __name__ == '__main__':
-    fd = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
     loop = asyncio.get_event_loop()
-    loop.add_reader(fd, raw_recv, fd)
+    loop.add_reader(sock, raw_recv, sock)
     loop.run_forever()
 
