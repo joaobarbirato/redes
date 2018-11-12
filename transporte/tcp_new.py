@@ -6,6 +6,14 @@
 # sudo iptables -I OUTPUT -p tcp --tcp-flags RST RST -j DROP
 #
 
+"""
+    Grupo                               RA
+        Cassiano Maia                       726507
+        Gabriel de Souza Alves              726515
+        Joao Gabriel Melo Barbirato         726546
+        Julia Milani                        726552
+"""
+
 import asyncio
 import socket
 import struct
