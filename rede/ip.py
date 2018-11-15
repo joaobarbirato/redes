@@ -27,12 +27,12 @@ ETH_P_IP = 0x0800
 # O sistema operacional vai utilizá-lo somente para determinar qual o próximo
 # roteador para onde vai encaminhar o datagrama. Experimente trocar por um
 # endereço pertencente à sua subrede local e veja o que acontece!
-EXT_ADDR = ('127.0.0.1', 0)#open('my_addr.txt').read(), 0)
+EXT_ADDR = ('127.0.0.2', 0)#open('my_addr.txt').read(), 0)
 
 # Coloque abaixo o endereço IP do seu computador na sua rede local
 my_ip = bytes(map(int, '127.0.0.1'.split('.')))
 
-dicionario = {}
+packets = {}
 
 def send_ping(send_fd):
     #print('enviando ping: ', len(__PING_HEADER + my_ip + __DATAGRAM))
@@ -45,22 +45,24 @@ def send_ping(send_fd):
 
 
 def raw_recv(recv_fd):
-    packet = recv_fd.recv(12000)
-    version_trash, total_length, ident, flag_fragoffset, _, chksum, src_ip, dst_ip = struct.unpack('!HHHHHHII', packet[:20])
+    data = recv_fd.recv(12000)
+    while data is not b"":
+        version_ihl_trash, total_length, ident, flag_fragoffset, ttl_proto, chksum, src_ip, dst_ip = struct.unpack('!HHHHHHII', data[:20])
+        # retira apenas o pacote atual dos dados
+        packet = data[:total_length]
+        data = data[total_length:]
+        # verifica se é um pacote ipv4
+        assert(version_ihl_trash >> 12 == 4)
 
-    # se eh ipv4 (teste de unidade)
-    if not version_trash >> 12 == 4:
-        print("muito estranho")
-        return 0
+        if str(ident) not in packets:
+            packets[str(ident)] = {'pkt':packet, 'hits':1}
+        else:
+            packets[str(ident)]['pkt'] += packet
+            packets[str(ident)]['hits'] += 1
     
-    if str(ident) not in dicionario:
-        dicionario[str(ident)] = [repr(packet)]
-    else:
-        dicionario[str(ident)].append(repr(packet))
-    
-    [print("id: ", key," quantos: ", len(value), end=", ") for key, value in dicionario.items()]
+    [print("id: ", key," hits: ", value['hits']) for key, value in packets.items()]
     print()
-    alan_turing(1)
+
 
 if __name__ == '__main__':
     # Segundo a manpage http://man7.org/linux/man-pages/man7/raw.7.html,
