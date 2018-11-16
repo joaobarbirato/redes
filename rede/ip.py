@@ -2,7 +2,6 @@
 import socket
 import asyncio
 import struct
-from time import sleep as alan_turing
 
 """
 ```shell
@@ -10,65 +9,92 @@ from time import sleep as alan_turing
 ```
 """
 
-__MULTIPLIER = 10
-__GOLD = b"C47170"
-__PING_HEADER = b"\x45\x00\x00\x54\xb4\x76\x40\x00\x40\x01\x6b\x26"
-__DATAGRAM = b"\x01\x01\x01\x01\x08\x00\xa4\xdb\x67\x9f \
-            \x00\x06\xa5\xaa\xe1\x5b\x00\x00\x00\x00    \
-            \xa5\xa5\x00\x00\x00\x00\x00\x00\x10\x11    \
-            \x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b    \
-            \x1c\x1d\x1e\x1f\x20\x21\x22\x23\x24\x25    \
-            \x26\x27\x28\x29\x2a\x2b\x2c\x2d\x2e\x2f    \
-            \x30\x31\x32\x33\x34\x35\x36\x37" + __GOLD * __MULTIPLIER + b"fim"
-            
+__MULTIPLIER = 360
+__DATAGRAM = b"\xba\xdc\x0f\xfe" * __MULTIPLIER
 ETH_P_IP = 0x0800
-
-# O endereço abaixo pode ser qualquer endereço fora da sua rede local.
-# O sistema operacional vai utilizá-lo somente para determinar qual o próximo
-# roteador para onde vai encaminhar o datagrama. Experimente trocar por um
-# endereço pertencente à sua subrede local e veja o que acontece!
-EXT_ADDR = ('127.0.0.2', 0)#open('my_addr.txt').read(), 0)
-
-# Coloque abaixo o endereço IP do seu computador na sua rede local
-my_ip = bytes(map(int, '127.0.0.1'.split('.')))
-
+DEST_ADDR = "1.1.1.1"
+FLAGS_DF = 1 << 15
+FLAGS_MF = 1 << 14
 packets = {}
 
+class Packet:
+    def __init__(self, id_pkt, offset, data, content=""):
+        self.id = id_pkt
+        self.fragments = {offset:data}
+        self.content = content 
+
+
+def addr2str(addr):
+    return '%d.%d.%d.%d' % tuple(int(x) for x in addr)
+
+
+def str2addr(addr):
+    return bytes(int(x) for x in addr.split('.'))
+
+
+def calc_checksum(segment):
+    if len(segment) % 2 == 1:
+        # se for ímpar, faz padding à direita
+        segment += b"\x00"
+    checksum = 0
+    for i in range(0, len(segment), 2):
+        x, = struct.unpack('!H', segment[i:i+2])
+        checksum += x
+        while checksum > 0xffff:
+            checksum = (checksum & 0xffff) + 1
+    checksum = ~checksum
+    return checksum & 0xffff
+
+
 def send_ping(send_fd):
-    #print('enviando ping: ', len(__PING_HEADER + my_ip + __DATAGRAM))
     # Exemplo de pacote ping (ICMP echo request) destinado a 1.1.1.1.
     # Veja que como estamos montando o cabeçalho IP, precisamos preencher
     # endereço IP de origem e de destino.
-    send_fd.sendto(__PING_HEADER + my_ip + __DATAGRAM, EXT_ADDR)
+    msg = bytearray(b"\x08\x00\x00\x00" + __DATAGRAM)
+    msg[2:4] = struct.pack('!H', calc_checksum(msg))
+    print('enviando ping: %d' % len(msg))
+    send_fd.sendto(msg, (DEST_ADDR, 0))
 
     asyncio.get_event_loop().call_later(1, send_ping, send_fd)
 
 
 def raw_recv(recv_fd):
-    data = recv_fd.recv(12000)
-    while data is not b"":
-        version_ihl_trash, total_length, ident, flag_fragoffset, ttl_proto, chksum, src_ip, dst_ip = struct.unpack('!HHHHHHII', data[:20])
-        # retira apenas o pacote atual dos dados
-        packet = data[:total_length]
-        data = data[total_length:]
-        # verifica se é um pacote ipv4
-        assert(version_ihl_trash >> 12 == 4)
-
-        if str(ident) not in packets:
-            packets[str(ident)] = {'pkt':packet, 'hits':1}
-        else:
-            packets[str(ident)]['pkt'] += packet
-            packets[str(ident)]['hits'] += 1
+    packet = recv_fd.recv(12000)
     
-    [print("id: ", key," hits: ", value['hits']) for key, value in packets.items()]
-    print()
+    version_ihl_trash, total_length, ident, flags_fragoffset, ttl_proto, chksum = struct.unpack('!HHHHHH', packet[:12])
+    src_ip = addr2str(packet[12:16])
+    dst_ip = addr2str(packet[16:20])
+    
+    # verifica se é um pacote ipv4
+    if not version_ihl_trash >> 12 == 4: 
+        return
+    # verifica se é uma resposta ao ping
+    if src_ip != DEST_ADDR:
+        return
+
+    print("%s -> %s" % (src_ip, dst_ip))
+
+    if (flags_fragoffset & FLAGS_DF) == FLAGS_DF:
+        print("DO NOT FRAGMENT")
+    if (flags_fragoffset & FLAGS_MF) == FLAGS_MF:
+        print(f"ID {ident} NEEDS MORE FRAGMENTS")
+    frag_offset = flags_fragoffset & 0x1FFF
+    if frag_offset is not 0:
+        print("Offset: %d" % frag_offset)
+    
+    if str(ident) not in packets:
+        packets[str(ident)] = {'pkt':packet, 'hits':1}
+    else:
+        packets[str(ident)]['pkt'] += packet
+        packets[str(ident)]['hits'] += 1
+
+    #[print("ID: ", key," HITS: ", value['hits'], end=", ") for key, value in packets.items()]
+    #print()
 
 
 if __name__ == '__main__':
-    # Segundo a manpage http://man7.org/linux/man-pages/man7/raw.7.html,
-    # o raw socket com protocolo IPPROTO_RAW só pode ser usado para enviar
-    # datagramas IP. Ao tentar receber datagramas por ele, nunca chega nada.
-    send_fd = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+    # Ver a manpage http://man7.org/linux/man-pages/man7/raw.7.html,
+    send_fd = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
 
     # Para receber existem duas abordagens. A primeira é a da etapa anterior
     # do trabalho, de colocar socket.IPPROTO_TCP, socket.IPPROTO_UDP ou
