@@ -9,19 +9,36 @@ import struct
 ```
 """
 
-__MULTIPLIER = 360
+__MULTIPLIER = 5000
 __DATAGRAM = b"\xba\xdc\x0f\xfe" * __MULTIPLIER
 ETH_P_IP = 0x0800
-DEST_ADDR = "1.1.1.1"
+DEST_ADDR = "127.0.0.1"
 FLAGS_DF = 1 << 15
 FLAGS_MF = 1 << 14
 packets = {}
 
+
+class Header:
+    def __init__(self, packet):
+        version_ihl, _, total_length, ident, flags_offset, ttl, protocol, chksum = struct.unpack('!BBHHHBBH', packet[:12])
+        self.version = version_ihl >> 4
+        self.ihl = version_ihl & 0xF
+        self.length = total_length
+        self.id = ident
+        self.flags = flags_offset >> 13
+        self.offset = flags_offset & 0x1FFF
+        self.ttl = ttl
+        self.protocol = protocol
+        self.checksum = chksum
+        self.src_ip = addr2str(packet[12:16])
+        self.dst_ip = addr2str(packet[16:20])
+        
+
 class Packet:
-    def __init__(self, id_pkt, offset, data, content=""):
+    def __init__(self, id_pkt, header, data):
         self.id = id_pkt
-        self.fragments = {offset:data}
-        self.content = content 
+        self.header = header
+        self.data = data 
 
 
 def addr2str(addr):
@@ -46,13 +63,18 @@ def calc_checksum(segment):
     return checksum & 0xffff
 
 
+def timeout(packets, pkt_id):
+    if pkt_id in packets:
+        del packets[pkt_id]
+
+
 def send_ping(send_fd):
     # Exemplo de pacote ping (ICMP echo request) destinado a 1.1.1.1.
     # Veja que como estamos montando o cabeçalho IP, precisamos preencher
     # endereço IP de origem e de destino.
     msg = bytearray(b"\x08\x00\x00\x00" + __DATAGRAM)
     msg[2:4] = struct.pack('!H', calc_checksum(msg))
-    print('enviando ping: %d' % len(msg))
+    print('enviando ping: %d bytes' % len(msg))
     send_fd.sendto(msg, (DEST_ADDR, 0))
 
     asyncio.get_event_loop().call_later(1, send_ping, send_fd)
@@ -60,37 +82,32 @@ def send_ping(send_fd):
 
 def raw_recv(recv_fd):
     packet = recv_fd.recv(12000)
-    
-    version_ihl_trash, total_length, ident, flags_fragoffset, ttl_proto, chksum = struct.unpack('!HHHHHH', packet[:12])
-    src_ip = addr2str(packet[12:16])
-    dst_ip = addr2str(packet[16:20])
-    
+
+    header = Header(packet)
+    pkt_id = (header.src_ip, header.dst_ip, header.protocol, header.id)
+    data = packet[header.ihl * 4:]
+    pkt = Packet(pkt_id, header, data)
+
     # verifica se é um pacote ipv4
-    if not version_ihl_trash >> 12 == 4: 
+    if not pkt.header.version == 4: 
         return
     # verifica se é uma resposta ao ping
-    if src_ip != DEST_ADDR:
+    if pkt.header.src_ip != DEST_ADDR:
         return
-
-    print("%s -> %s" % (src_ip, dst_ip))
-
-    if (flags_fragoffset & FLAGS_DF) == FLAGS_DF:
-        print("DO NOT FRAGMENT")
-    if (flags_fragoffset & FLAGS_MF) == FLAGS_MF:
-        print(f"ID {ident} NEEDS MORE FRAGMENTS")
-    frag_offset = flags_fragoffset & 0x1FFF
-    if frag_offset is not 0:
-        print("Offset: %d" % frag_offset)
-    
-    if str(ident) not in packets:
-        packets[str(ident)] = {'pkt':packet, 'hits':1}
+    # adiciona pacote à lista de pacotes
+    if pkt.id not in packets:
+        packets[pkt.id] = {'pkts': [pkt], data: pkt.data, 'hits':1, 'timer': None}
+        packets[pkt.id]['timer'] = asyncio.get_event_loop().call_later(pkt.header.ttl, timeout, packets, pkt.id)
     else:
-        packets[str(ident)]['pkt'] += packet
-        packets[str(ident)]['hits'] += 1
-
-    #[print("ID: ", key," HITS: ", value['hits'], end=", ") for key, value in packets.items()]
-    #print()
-
+        packets[pkt.id]['pkts'].append(pkt)
+        packets[pkt.id]['data'] += pkt.data
+        packets[pkt.id]['hits'] += 1
+    print("recebendo resposta: %s -> %s, %d bytes" % (pkt.header.src_ip, pkt.header.dst_ip, len(packet)))
+    # caso tenha terminado de montar o pacote antes do timeout
+    if (pkt.header.flags & FLAGS_MF) == 0 and pkt.header.offset > 0 and packets[pkt.id]['timer'] is not None:
+        packets[pkt.id]['timer'].cancel()
+    
+    
 
 if __name__ == '__main__':
     # Ver a manpage http://man7.org/linux/man-pages/man7/raw.7.html,
