@@ -11,6 +11,7 @@ import struct
 
 __MULTIPLIER = 5000
 __DATAGRAM = b"\xba\xdc\x0f\xfe" * __MULTIPLIER
+ETH_P_ALL= 3
 ETH_P_IP = 0x0800
 DEST_ADDR = "127.0.0.1"
 FLAGS_DF = 1 << 15
@@ -125,7 +126,7 @@ if __name__ == '__main__':
     # enlace não sejam apresentadas a nós, como abaixo. Esse socket também
     # poderia ser usado para enviar pacotes, mas somente se eles forem quadros,
     # ou seja, se incluírem cabeçalhos da camada de enlace.
-    recv_fd = socket.socket(socket.AF_PACKET, socket.SOCK_DGRAM, socket.htons(ETH_P_IP))
+    recv_fd = socket.socket(socket.AF_PACKET, socket.SOCK_DGRAM, socket.htons(ETH_P_ALL))
 
     loop = asyncio.get_event_loop()
     loop.add_reader(recv_fd, raw_recv, recv_fd)
