@@ -2,6 +2,8 @@
 import socket
 import asyncio
 import struct
+import signal
+import sys
 
 """
 ```shell
@@ -16,7 +18,18 @@ ETH_P_IP = 0x0800
 DEST_ADDR = "127.0.0.1"
 FLAGS_DF = 1 << 15
 FLAGS_MF = 1 << 14
+MTU_LIMIT = 1500
+no_pkt_sent = 0
+no_pkt_recv = 0
+
 packets = {}
+
+def sigint_handler(sig, frame):
+    global no_pkt_sent
+    global no_pkt_recv
+    print("\nPING INTERROMPIDO\n- pacotes enviados: %d\n- pacotes recebidos: %d\n- perda: %.2f%%" \
+        % (no_pkt_sent, no_pkt_recv, 100*(no_pkt_sent - no_pkt_recv)/no_pkt_sent))
+    sys.exit(0)
 
 
 class Header:
@@ -70,19 +83,25 @@ def timeout(packets, pkt_id):
 
 
 def send_ping(send_fd):
+    global no_pkt_sent
     # Exemplo de pacote ping (ICMP echo request) destinado a 1.1.1.1.
     # Veja que como estamos montando o cabeçalho IP, precisamos preencher
     # endereço IP de origem e de destino.
     msg = bytearray(b"\x08\x00\x00\x00" + __DATAGRAM)
     msg[2:4] = struct.pack('!H', calc_checksum(msg))
-    print('enviando ping: %d bytes' % len(msg))
+
+    no_pkt_sent += 1
+
+    print('[S] pkt %d, enviando ping: %d bytes' % (no_pkt_sent, len(msg)))
+
     send_fd.sendto(msg, (DEST_ADDR, 0))
 
     asyncio.get_event_loop().call_later(1, send_ping, send_fd)
 
 
 def raw_recv(recv_fd):
-    packet = recv_fd.recv(12000)
+    global no_pkt_recv
+    packet = recv_fd.recv(20000)
 
     header = Header(packet)
     pkt_id = (header.src_ip, header.dst_ip, header.protocol, header.id)
@@ -97,20 +116,33 @@ def raw_recv(recv_fd):
         return
     # adiciona pacote à lista de pacotes
     if pkt.id not in packets:
-        packets[pkt.id] = {'pkts': [pkt], data: pkt.data, 'hits':1, 'timer': None}
+        packets[pkt.id] = {'pkts': [pkt], data: pkt.data, 'hits':1, 'timer': None, 'data': b''}
         packets[pkt.id]['timer'] = asyncio.get_event_loop().call_later(pkt.header.ttl, timeout, packets, pkt.id)
     else:
         packets[pkt.id]['pkts'].append(pkt)
         packets[pkt.id]['data'] += pkt.data
         packets[pkt.id]['hits'] += 1
-    print("recebendo resposta: %s -> %s, %d bytes" % (pkt.header.src_ip, pkt.header.dst_ip, len(packet)))
+    print("[R] recebendo resposta: %s -> %s, %d bytes, %d hits" % \
+        (pkt.header.src_ip, pkt.header.dst_ip, len(packet), packets[pkt.id]['hits']))
+
+    # contabiliza no ultimo fragmento
+    if len(packet) < MTU_LIMIT:
+        no_pkt_recv += 1
+
     # caso tenha terminado de montar o pacote antes do timeout
     if (pkt.header.flags & FLAGS_MF) == 0 and pkt.header.offset > 0 and packets[pkt.id]['timer'] is not None:
         packets[pkt.id]['timer'].cancel()
     
-    
+def main(argv=None):
+    global DEST_ADDR
 
-if __name__ == '__main__':
+    if len(argv) > 2:
+        print(argv[0], "\nUso:\n\tsudo python ip.py [DEST_IP]?")
+        return 0
+
+    elif len(argv) == 2:
+        DEST_ADDR = argv[1]
+
     # Ver a manpage http://man7.org/linux/man-pages/man7/raw.7.html,
     send_fd = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
 
@@ -132,3 +164,8 @@ if __name__ == '__main__':
     loop.add_reader(recv_fd, raw_recv, recv_fd)
     asyncio.get_event_loop().call_later(1, send_ping, send_fd)
     loop.run_forever()
+
+if __name__ == '__main__':    
+    signal.signal(signal.SIGINT, sigint_handler)
+    main(sys.argv)
+    signal.pause()
